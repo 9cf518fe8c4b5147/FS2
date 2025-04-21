@@ -1,4 +1,3 @@
-TYPESCRIPT
 import { Context } from "@netlify/edge-functions";
 
 const pickHeaders = (headers: Headers, keys: (string | RegExp)[]): Headers => {
