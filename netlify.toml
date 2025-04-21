@@ -1,11 +1,6 @@
-
-[[
-headers
-]]
+[[headers]]
   for = "/*"
-  [
-headers.values
-]
+[headers.values]
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Headers = "*"
     Access-Control-Allow-Methods = "*"
@@ -17,9 +12,7 @@ headers.values
 #  force = true
 
 # 添加 Edge Function 配置
-[[
-edge_functions
-]]
+[[edge_functions]]
   # path 定义了哪些请求路径会触发这个 Edge Function
   # "/*" 表示所有路径
   path = "/*"
