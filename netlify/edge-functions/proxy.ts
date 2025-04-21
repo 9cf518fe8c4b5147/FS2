@@ -1,7 +1,7 @@
 import { Context } from "@netlify/edge-functions";
 
+// ... (pickHeaders 函数保持不变) ...
 const pickHeaders = (headers: Headers, keys: (string | RegExp)[]): Headers => {
-  // ... (pickHeaders 函数保持不变) ...
   const picked = new Headers();
   for (const key of headers.keys()) {
     if (keys.some((k) => (typeof k === "string" ? k === key : k.test(key)))) {
@@ -21,41 +21,25 @@ const CORS_HEADERS: Record<string, string> = {
 };
 
 export default async (request: Request, context: Context) => {
+  // --- 添加强制日志 ---
+  console.log("--- PROXY FUNCTION V4 (with direct duplex) EXECUTING ---");
+  // --- 日志结束 ---
 
   if (request.method === "OPTIONS") {
+    console.log("Handling OPTIONS request");
     return new Response(null, {
       headers: CORS_HEADERS,
     });
   }
 
   const { pathname, searchParams } = new URL(request.url);
+  console.log(`Handling ${request.method} request for path: ${pathname}`);
+
   if(pathname === "/") {
     // ... (根路径的 HTML 响应保持不变) ...
-    let blank_html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Google PaLM API proxy on Netlify Edge</title>
-</head>
-<body>
-  <h1 id="google-palm-api-proxy-on-netlify-edge">Google PaLM API proxy on Netlify Edge</h1>
-  <p>Tips: This project uses a reverse proxy to solve problems such as location restrictions in Google APIs. </p>
-  <p>If you have any of the following requirements, you may need the support of this project.</p>
-  <ol>
-  <li>When you see the error message &quot;User location is not supported for the API use&quot; when calling the Google PaLM API</li>
-  <li>You want to customize the Google PaLM API</li>
-  </ol>
-  <p>For technical discussions, please visit <a href="https://simonmy.com/posts/google-palm-api-proxy-on-netlify-edge.html">https://simonmy.com/posts/google-palm-api-proxy-on-netlify-edge.html</a></p>
-</body>
-</html>
-    `
-    return new Response(blank_html, {
-      headers: {
-        ...CORS_HEADERS,
-        "content-type": "text/html"
-      },
-    });
+    console.log("Serving root HTML page");
+    // ... (HTML content) ...
+    return new Response(blank_html, { /* ... headers ... */ });
   }
 
   const url = new URL(pathname, "https://generativelanguage.googleapis.com");
@@ -66,42 +50,43 @@ export default async (request: Request, context: Context) => {
   });
 
   const headers = pickHeaders(request.headers, ["content-type", "authorization", "x-goog-api-client", "x-goog-api-key", "accept-encoding"]);
+  console.log("Forwarding headers:", Object.fromEntries(headers.entries())); // Log forwarded headers
 
-  // --- 修改开始 ---
-  // 构建 fetch 选项
-  const fetchOptions: RequestInit = {
-    method: request.method,
-    headers: headers,
-    // 只有当请求方法不是 GET 或 HEAD 时才传递 body 和 duplex
-    // (理论上 Gemini API 主要是 POST，但这样写更健壮)
-    body: (request.method !== 'GET' && request.method !== 'HEAD') ? request.body : undefined,
-  };
+  try {
+    // --- 修改 fetch 调用 ---
+    console.log("Preparing fetch to Google API...");
+    const response = await fetch(url, {
+      method: request.method,
+      headers: headers,
+      body: request.body, // 直接传递 body
+      // @ts-ignore
+      duplex: 'half' // 直接强制添加 duplex
+    });
+    // --- 修改结束 ---
 
-  // 如果有 body，则添加 duplex 选项
-  if (fetchOptions.body) {
-    // @ts-ignore // 某些旧的 TS 定义可能不认识 duplex，忽略类型检查
-    fetchOptions.duplex = 'half';
+    console.log(`Received response from Google API with status: ${response.status}`);
+
+    const responseHeaders = { ...CORS_HEADERS };
+    response.headers.forEach((value, key) => {
+      responseHeaders[key] = value;
+    });
+
+    console.log("Forwarding response back to client.");
+    return new Response(response.body, {
+      headers: responseHeaders,
+      status: response.status
+    });
+
+  } catch (error) {
+    // --- 添加错误捕获日志 ---
+    console.error("!!! Error during fetch to Google API or processing response:", error);
+    // 返回一个更明确的错误给客户端，而不是依赖默认的 502
+    return new Response(JSON.stringify({ error: "Proxy failed", details: error.message }), {
+      status: 500, // 使用 500 Internal Server Error 可能更合适
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" }
+    });
+    // --- 错误捕获结束 ---
   }
-
-  // 使用构建好的选项进行 fetch
-  const response = await fetch(url, fetchOptions);
-  // --- 修改结束 ---
-
-
-  const responseHeaders = {
-    ...CORS_HEADERS,
-    // 需要从 response.headers 迭代创建对象，而不是直接扩展
-    // 因为 response.headers 不是一个简单的 JS 对象
-  };
-  response.headers.forEach((value, key) => {
-    responseHeaders[key] = value;
-  });
-
-
-  return new Response(response.body, {
-    headers: responseHeaders,
-    status: response.status
-  });
 };
 
-// 确保你的 pickHeaders 函数定义在这里或在上面 
+// 确保 pickHeaders 函数定义完整
