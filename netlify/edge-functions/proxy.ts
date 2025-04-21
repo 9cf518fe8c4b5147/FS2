@@ -104,4 +104,4 @@ export default async (request: Request, context: Context) => {
   });
 };
 
-// 确保你的 pickHeaders 函数定义在这里或在上面
+// 确保你的 pickHeaders 函数定义在这里或在上面 
